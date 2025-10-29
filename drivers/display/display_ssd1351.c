@@ -391,7 +391,6 @@ static int ssd1351_init(const struct device *dev) {
   return ssd1351_blanking_off(dev);
 }
 
-#ifdef CONFIG_PM_DEVICE
 static int ssd1351_pm_action(const struct device *dev,
                              enum pm_device_action action) {
   switch (action) {
@@ -403,6 +402,14 @@ static int ssd1351_pm_action(const struct device *dev,
     return -ENOTSUP;
   }
 }
+
+#ifdef CONFIG_PM_DEVICE
+#define SSD1351_PM_ACTION_DEFINE(inst)                                         \
+  PM_DEVICE_DT_INST_DEFINE(inst, ssd1351_pm_action);
+#define SSD1351_PM_ACTION_GET(inst) PM_DEVICE_DT_INST_GET(inst)
+#else
+#define SSD1351_PM_ACTION_DEFINE(inst)
+#define SSD1351_PM_ACTION_GET(inst) NULL
 #endif
 
 static const struct display_driver_api ssd1351_api = {
@@ -430,8 +437,8 @@ static const struct display_driver_api ssd1351_api = {
       .y_offset = DT_INST_PROP(inst, y_offset),                                \
       .orientation = DISPLAY_ORIENTATION_NORMAL,                               \
   };                                                                           \
-  PM_DEVICE_DT_INST_DEFINE(inst, ssd1351_pm_action);                           \
-  DEVICE_DT_INST_DEFINE(inst, &ssd1351_init, PM_DEVICE_DT_INST_GET(inst),      \
+  SSD1351_PM_ACTION_DEFINE(inst);                                              \
+  DEVICE_DT_INST_DEFINE(inst, &ssd1351_init, SSD1351_PM_ACTION_GET(inst),      \
                         &ssd1351_data_##inst, &ssd1351_config_##inst,          \
                         POST_KERNEL, CONFIG_DISPLAY_INIT_PRIORITY,             \
                         &ssd1351_api);

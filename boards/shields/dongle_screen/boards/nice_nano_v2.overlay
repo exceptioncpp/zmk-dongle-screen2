@@ -61,6 +61,7 @@ disp_spi: &spi3 {
        height = <128>;
        x-offset = <0>;
        y-offset = <0>;
+       status = "okay";
    };
 };
 
