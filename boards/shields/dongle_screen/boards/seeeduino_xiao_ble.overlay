@@ -52,7 +52,7 @@ disp_spi: &spi3 {
    cs-gpios = <&xiao_d 9 GPIO_ACTIVE_LOW>;
 
    ssd1351: ssd1351@0 {
-       compatible = "solomon,ssd1351";
+       compatible = "zmk,ssd1351";
        spi-max-frequency = <8000000>;
        reg = <0>;
        cmd-data-gpios = <&xiao_d 7 GPIO_ACTIVE_LOW>;

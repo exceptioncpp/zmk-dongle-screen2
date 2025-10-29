@@ -1,0 +1,45 @@
+# Copyright (c) 2024
+# SPDX-License-Identifier: Apache-2.0
+
+description: SSD1351 128x128 RGB OLED panel driven over SPI
+
+compatible: "zmk,ssd1351"
+
+on-bus: spi
+
+include: spi-device.yaml
+
+properties:
+  spi-max-frequency:
+    type: int
+    required: true
+
+  reset-gpios:
+    type: phandle-array
+    description: Reset GPIO
+
+  cmd-data-gpios:
+    type: phandle-array
+    description: Command/Data selection GPIO
+
+  width:
+    type: int
+    required: true
+    description: Active pixel width of the panel
+
+  height:
+    type: int
+    required: true
+    description: Active pixel height of the panel
+
+  x-offset:
+    type: int
+    default: 0
+    description: Column offset inside the controller RAM
+
+  y-offset:
+    type: int
+    default: 0
+    description: Row offset inside the controller RAM
+
+additionalProperties: false

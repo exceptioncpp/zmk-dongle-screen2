@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT solomon_ssd1351
+#define DT_DRV_COMPAT zmk_ssd1351
 
 #include "display_ssd1351.h"
 
