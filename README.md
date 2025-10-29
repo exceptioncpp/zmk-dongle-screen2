@@ -1,6 +1,6 @@
 # ZMK Dongle Screen YADS (Yet another Dongle Screen)
 
-This project provides a Zephyr module for a dongle display shield based on the ST7789V display and the Seeeduino XAIO BLE microcontroller and the LVGL graphics library.  
+This project provides a Zephyr module for a dongle display shield based on the SSD1351 128x128 OLED and the Seeeduino XAIO BLE microcontroller and the LVGL graphics library.
 The display can take advantage of a ambient light sensor to dim and brighten the display automatically.  
 It offers various widgets for current output, displaying layer, mod, WPM, and battery status, as well as brightness adjustments via keyboard, automatic dimming after inactivity, and a customizable status screen for ZMK-based keyboards.
 
