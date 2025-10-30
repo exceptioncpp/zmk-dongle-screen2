@@ -26,6 +26,11 @@ static struct zmk_widget_dongle_battery_status dongle_battery_status_widget;
 static struct zmk_widget_wpm_status wpm_status_widget;
 #endif
 
+#if CONFIG_DONGLE_SCREEN_LATENCY_METRICS
+#include "widgets/latency_status.h"
+static struct zmk_widget_latency_status latency_status_widget;
+#endif
+
 #if CONFIG_DONGLE_SCREEN_MODIFIER_ACTIVE
 #include "widgets/mod_status.h"
 static struct zmk_widget_mod_status mod_widget;
@@ -83,6 +88,11 @@ lv_obj_t *zmk_display_status_screen()
 #if CONFIG_DONGLE_SCREEN_MODIFIER_ACTIVE
     zmk_widget_mod_status_init(&mod_widget, screen);
     lv_obj_align(zmk_widget_mod_status_obj(&mod_widget), LV_ALIGN_BOTTOM_MID, 0, -32);
+#endif
+
+#if CONFIG_DONGLE_SCREEN_LATENCY_METRICS
+    zmk_widget_latency_status_init(&latency_status_widget, screen);
+    lv_obj_align(zmk_widget_latency_status_obj(&latency_status_widget), LV_ALIGN_TOP_RIGHT, -4, 36);
 #endif
 
     return screen;

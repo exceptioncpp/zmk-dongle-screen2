@@ -137,6 +137,57 @@ config DONGLE_SCREEN_WPM_ACTIVE
     help
       If the WPM Widget should be active or not
 
+config DONGLE_SCREEN_LATENCY_METRICS
+    bool "Enable latency and transport metrics collection"
+    default y
+    help
+      Enable detailed latency instrumentation for the dongle screen stack.
+      When enabled, additional hooks gather timing information from the
+      keyboard scanning pipeline, split transport and USB/BLE host paths.
+      The results are forwarded to the dongle screen for visualisation.
+
+if DONGLE_SCREEN_LATENCY_METRICS
+
+config DONGLE_SCREEN_LATENCY_WINDOW
+    int "Number of samples kept per latency metric"
+    default 1024
+    range 8 2048
+    help
+      Size of the sliding window that is used to keep latency samples.
+      Larger values provide smoother statistics at the expense of memory.
+
+config DONGLE_SCREEN_LATENCY_REMOTE_PERIOD_MS
+    int "Peripheral metrics uplink period (ms)"
+    default 100
+    range 10 1000
+    help
+      Period in milliseconds for the keyboard halves to push their metrics
+      to the dongle over the split transport.
+
+config DONGLE_SCREEN_LATENCY_SHOW_USB
+    bool "Collect USB transport metrics"
+    default y
+    depends on USB_DEVICE_STACK
+    help
+      Gather USB IN endpoint statistics (frame wait and transfer duration).
+
+config DONGLE_SCREEN_LATENCY_SHOW_BLE
+    bool "Collect BLE transport metrics"
+    default y
+    depends on BT
+    help
+      Gather BLE notify timings for split traffic and host HID reports.
+
+config DONGLE_SCREEN_LATENCY_SENSOR_INDEX
+    hex "Reserved sensor index used for metrics uplink"
+    default 0xFE
+    help
+      Sensor index value that is reserved for the latency metrics uplink
+      packets on the split transport. This should not clash with actual
+      sensor indices that might be present on the keyboard.
+
+endif # DONGLE_SCREEN_LATENCY_METRICS
+
 config DONGLE_SCREEN_MODIFIER_ACTIVE
     bool "Modifier Widget active"
     default y
