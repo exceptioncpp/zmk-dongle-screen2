@@ -42,3 +42,12 @@ properties:
     default: 0
     description: Row offset inside the controller RAM
 
+  rotation:
+    type: int
+    required: false
+    description: Display rotation in degrees clockwise (0, 90, 180, 270)
+    enum:
+      - 0
+      - 90
+      - 180
+      - 270

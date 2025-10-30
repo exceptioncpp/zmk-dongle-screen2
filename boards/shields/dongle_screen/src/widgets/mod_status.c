@@ -4,6 +4,7 @@
 #include <lvgl.h>
 #include "mod_status.h"
 #include <fonts.h> // <-- Wichtig für LV_FONT_DECLARE
+#include "fonts.h"
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
@@ -59,7 +60,7 @@ int zmk_widget_mod_status_init(struct zmk_widget_mod_status *widget, lv_obj_t *p
     widget->label = lv_label_create(widget->obj);
     lv_obj_align(widget->label, LV_ALIGN_CENTER, 0, 0);
     lv_label_set_text(widget->label, "-");
-    lv_obj_set_style_text_font(widget->label, &NerdFonts_Regular_40, 0); // <-- NerdFont setzen
+    lv_obj_set_style_text_font(widget->label, FONT_LARGE, 0); // <-- NerdFont setzen
 
     k_timer_init(&mod_status_timer, mod_status_timer_cb, NULL);
     k_timer_user_data_set(&mod_status_timer, widget);

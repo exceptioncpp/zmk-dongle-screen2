@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "fonts.h"
+
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -66,7 +68,7 @@ int zmk_widget_layer_status_init(struct zmk_widget_layer_status *widget, lv_obj_
 {
     widget->obj = lv_label_create(parent);
 
-    lv_obj_set_style_text_font(widget->obj, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_font(widget->obj, FONT_LARGE, 0);
 
     sys_slist_append(&widgets, &widget->node);
 

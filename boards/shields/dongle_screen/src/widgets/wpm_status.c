@@ -62,7 +62,7 @@ int zmk_widget_wpm_status_init(struct zmk_widget_wpm_status *widget, lv_obj_t *p
 
     // Only here as a sample
     // widget->font_test = lv_label_create(widget->obj);
-    // lv_obj_set_style_text_font(widget->font_test, &NerdFonts_Regular_20, 0);
+    // lv_obj_set_style_text_font(widget->font_test, &NerdFonts_Regular, 0);
     // lv_obj_align(widget->font_test, LV_ALIGN_TOP_RIGHT, -80, 0);
 
     // Only here as a sample

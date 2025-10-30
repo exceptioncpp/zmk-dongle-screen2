@@ -1,3 +1,5 @@
+zephyr_compile_definitions(LV_LVGL_H_INCLUDE_SIMPLE=1)
+
 zephyr_include_directories(include)
 zephyr_library()
 
