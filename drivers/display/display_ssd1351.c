@@ -16,6 +16,7 @@
 #include <zephyr/drivers/spi.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/pm/device.h>
+#include <zephyr/sys/util.h>
 
 LOG_MODULE_REGISTER(display_ssd1351, CONFIG_DISPLAY_LOG_LEVEL);
 
@@ -27,6 +28,7 @@ struct ssd1351_config {
   uint16_t height;
   uint16_t x_offset;
   uint16_t y_offset;
+  enum display_orientation default_orientation;
 };
 
 struct ssd1351_data {
@@ -44,6 +46,17 @@ static void ssd1351_set_offsets(const struct device *dev, uint16_t x_offset,
   data->x_offset = x_offset;
   data->y_offset = y_offset;
 }
+
+#define SSD1351_ROTATION_TO_ORIENTATION(rotation)                               \
+  (((rotation) == 0)                                                           \
+       ? DISPLAY_ORIENTATION_NORMAL                                           \
+       : ((rotation) == 90)                                                   \
+             ? DISPLAY_ORIENTATION_ROTATED_90                                 \
+             : ((rotation) == 180)                                            \
+                   ? DISPLAY_ORIENTATION_ROTATED_180                          \
+                   : ((rotation) == 270)                                      \
+                         ? DISPLAY_ORIENTATION_ROTATED_270                    \
+                         : DISPLAY_ORIENTATION_NORMAL)
 
 static int ssd1351_transmit(const struct device *dev, uint8_t cmd,
                             const uint8_t *tx_data, size_t tx_count) {
@@ -170,8 +183,14 @@ ssd1351_get_capabilities(const struct device *dev,
   const struct ssd1351_data *data = dev->data;
 
   memset(capabilities, 0, sizeof(struct display_capabilities));
-  capabilities->x_resolution = config->width;
-  capabilities->y_resolution = config->height;
+  if ((data->orientation == DISPLAY_ORIENTATION_ROTATED_90) ||
+      (data->orientation == DISPLAY_ORIENTATION_ROTATED_270)) {
+    capabilities->x_resolution = config->height;
+    capabilities->y_resolution = config->width;
+  } else {
+    capabilities->x_resolution = config->width;
+    capabilities->y_resolution = config->height;
+  }
   capabilities->supported_pixel_formats = PIXEL_FORMAT_RGB_565;
   capabilities->current_pixel_format = PIXEL_FORMAT_RGB_565;
   capabilities->current_orientation = data->orientation;
@@ -189,8 +208,8 @@ static int ssd1351_set_pixel_format(const struct device *dev,
 static int ssd1351_set_orientation(const struct device *dev,
                                    enum display_orientation orientation) {
   const struct ssd1351_config *config = dev->config;
-  uint8_t remap = 0b01100100;
-  uint8_t startline;
+  struct ssd1351_data *data = dev->data;
+  uint8_t remap = BIT(6) | BIT(5) | BIT(2);
   uint8_t rotation;
 
   switch (orientation) {
@@ -212,38 +231,36 @@ static int ssd1351_set_orientation(const struct device *dev,
 
   switch (rotation) {
   case 0U:
-    remap |= 0b00010000;
+    remap |= BIT(4) | BIT(1);
     ssd1351_set_offsets(dev, config->x_offset, config->y_offset);
     break;
   case 1U:
-    remap |= 0b00010011;
+    remap |= BIT(4) | BIT(1) | BIT(0);
     ssd1351_set_offsets(dev, config->y_offset, config->x_offset);
     break;
   case 2U:
-    remap |= 0b00000010;
+    remap |= BIT(1);
     ssd1351_set_offsets(dev, config->x_offset, config->y_offset);
     break;
   case 3U:
-    remap |= 0b00000001;
+    remap |= BIT(0);
     ssd1351_set_offsets(dev, config->y_offset, config->x_offset);
     break;
   default:
     return -ENOTSUP;
   }
 
-  startline = (rotation < 2U) ? config->height : 0U;
-
   int ret = ssd1351_transmit(dev, SSD1351_CMD_SETREMAP, &remap, 1);
   if (ret < 0) {
     return ret;
   }
 
+  uint8_t startline = data->y_offset;
   ret = ssd1351_transmit(dev, SSD1351_CMD_STARTLINE, &startline, 1);
   if (ret < 0) {
     return ret;
   }
 
-  struct ssd1351_data *data = dev->data;
   data->orientation = orientation;
 
   return 0;
@@ -343,7 +360,7 @@ static int ssd1351_lcd_init(const struct device *dev) {
     return ret;
   }
 
-  return ssd1351_set_orientation(dev, DISPLAY_ORIENTATION_NORMAL);
+  return ssd1351_set_orientation(dev, config->default_orientation);
 }
 
 static int ssd1351_init(const struct device *dev) {
@@ -431,11 +448,14 @@ static const struct display_driver_api ssd1351_api = {
       .height = DT_INST_PROP(inst, height),                                    \
       .x_offset = DT_INST_PROP(inst, x_offset),                                \
       .y_offset = DT_INST_PROP(inst, y_offset),                                \
+      .default_orientation =                                                   \
+          SSD1351_ROTATION_TO_ORIENTATION(DT_INST_PROP_OR(inst, rotation, 0)), \
   };                                                                           \
   static struct ssd1351_data ssd1351_data_##inst = {                           \
       .x_offset = DT_INST_PROP(inst, x_offset),                                \
       .y_offset = DT_INST_PROP(inst, y_offset),                                \
-      .orientation = DISPLAY_ORIENTATION_NORMAL,                               \
+      .orientation =                                                           \
+          SSD1351_ROTATION_TO_ORIENTATION(DT_INST_PROP_OR(inst, rotation, 0)), \
   };                                                                           \
   SSD1351_PM_ACTION_DEFINE(inst);                                              \
   DEVICE_DT_INST_DEFINE(inst, &ssd1351_init, SSD1351_PM_ACTION_GET(inst),      \

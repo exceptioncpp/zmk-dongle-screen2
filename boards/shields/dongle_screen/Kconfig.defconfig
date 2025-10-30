@@ -48,8 +48,11 @@ endchoice
 config LV_COLOR_16_SWAP
 	default y
 
+config LV_FONT_MONTSERRAT_20
+    default y
+
 config LV_DISP_DEF_REFR_PERIOD
-    default 40
+    default 10
 
 config PWM
     default y
