@@ -1,5 +1,5 @@
 / {
    chosen {
-      zephyr,display = &st7789;
+      zephyr,display = &ssd1351;
   };
 };
