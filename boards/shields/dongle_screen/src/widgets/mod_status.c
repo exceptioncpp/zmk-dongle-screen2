@@ -10,6 +10,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 static void update_mod_status(struct zmk_widget_mod_status *widget)
 {
+
     uint8_t mods = zmk_hid_get_keyboard_report()->body.modifiers;
     char text[32] = "";
     int idx = 0;
@@ -55,7 +56,7 @@ static struct k_timer mod_status_timer;
 int zmk_widget_mod_status_init(struct zmk_widget_mod_status *widget, lv_obj_t *parent)
 {
     widget->obj = lv_obj_create(parent);
-    lv_obj_set_size(widget->obj, 120, 36);
+    lv_obj_set_size(widget->obj, 180, 40);
 
     widget->label = lv_label_create(widget->obj);
     lv_obj_align(widget->label, LV_ALIGN_CENTER, 0, 0);
