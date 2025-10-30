@@ -58,6 +58,31 @@ static void send_metric(enum ds_latency_metric metric)
 }
 #endif
 
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_PERIPHERAL)
+static void send_queue_metric(enum ds_latency_metric metric)
+{
+    struct ds_latency_queue_stat qstat;
+    if (!ds_latency_metrics_queue_stat(metric, DS_LATENCY_ORIGIN_LOCAL, &qstat)) {
+        return;
+    }
+
+    struct zmk_split_transport_peripheral_event ev = {
+        .type = ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_SENSOR_EVENT,
+        .data.sensor_event = {
+            .sensor_index = CONFIG_DONGLE_SCREEN_LATENCY_SENSOR_INDEX,
+        },
+    };
+
+    uint32_t packed = DS_LATENCY_REMOTE_QUEUE_PACK(qstat.depth, qstat.capacity);
+    ev.data.sensor_event.channel_data.value.val1 = (int32_t)packed;
+    ev.data.sensor_event.channel_data.value.val2 =
+        (int32_t)(DS_LATENCY_REMOTE_QUEUE_FLAG | metric);
+    ev.data.sensor_event.channel_data.channel = SENSOR_CHAN_ACCEL_X;
+
+    zmk_split_peripheral_report_event(&ev);
+}
+#endif
+
 static void metrics_work_handler(struct k_work *work)
 {
     uint32_t now = k_cycle_get_32();
@@ -69,6 +94,9 @@ static void metrics_work_handler(struct k_work *work)
     send_metric(DS_LAT_METRIC_DEBOUNCE_QUEUE);
     send_metric(DS_LAT_METRIC_SPLIT_TX_QUEUE);
     send_metric(DS_LAT_METRIC_SPLIT_TX_NOTIFY);
+    send_metric(DS_LAT_METRIC_CPU_IDLE);
+    send_queue_metric(DS_LAT_METRIC_DEBOUNCE_QUEUE);
+    send_queue_metric(DS_LAT_METRIC_SPLIT_TX_QUEUE);
 #endif
 
     k_work_schedule(&metrics_work,

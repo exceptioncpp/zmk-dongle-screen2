@@ -130,23 +130,25 @@ int __wrap_k_msgq_put(struct k_msgq *msgq, const void *data, k_timeout_t timeout
     int rc = __real_k_msgq_put(msgq, data, timeout);
     if (rc == 0) {
         uint32_t now = k_cycle_get_32();
+        uint16_t used = (uint16_t)k_msgq_num_used_get(msgq);
+        uint16_t capacity = (uint16_t)(used + k_msgq_num_free_get(msgq));
         if (msgq == &physical_layouts_kscan_msgq) {
             queue_push(&ctx_kscan, now);
             ds_latency_metrics_note_queue(DS_LAT_METRIC_DEBOUNCE_QUEUE, DS_LATENCY_ORIGIN_LOCAL,
-                                          k_msgq_num_used_get(msgq), 0);
+                                          used, capacity);
         }
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_PERIPHERAL)
         else if (msgq == &position_state_msgq) {
             queue_push(&ctx_split_tx, now);
             ds_latency_metrics_note_queue(DS_LAT_METRIC_SPLIT_TX_QUEUE, DS_LATENCY_ORIGIN_LOCAL,
-                                          k_msgq_num_used_get(msgq), 0);
+                                          used, capacity);
         }
 #endif
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
         else if (msgq == &peripheral_event_msgq) {
             queue_push(&ctx_split_rx, now);
             ds_latency_metrics_note_queue(DS_LAT_METRIC_SPLIT_RX_QUEUE, DS_LATENCY_ORIGIN_LOCAL,
-                                          k_msgq_num_used_get(msgq), 0);
+                                          used, capacity);
         }
 #endif
 #if IS_ENABLED(CONFIG_ZMK_BLE)
@@ -163,6 +165,8 @@ int __wrap_k_msgq_get(struct k_msgq *msgq, void *data, k_timeout_t timeout)
     int rc = __real_k_msgq_get(msgq, data, timeout);
     if (rc == 0) {
         uint32_t now = k_cycle_get_32();
+        uint16_t used = (uint16_t)k_msgq_num_used_get(msgq);
+        uint16_t capacity = (uint16_t)(used + k_msgq_num_free_get(msgq));
         uint32_t start;
         if (msgq == &physical_layouts_kscan_msgq) {
             if (queue_pop(&ctx_kscan, &start)) {
@@ -170,6 +174,8 @@ int __wrap_k_msgq_get(struct k_msgq *msgq, void *data, k_timeout_t timeout)
                                                  DS_LATENCY_ORIGIN_LOCAL,
                                                  cycle_delta(now, start));
             }
+            ds_latency_metrics_note_queue(DS_LAT_METRIC_DEBOUNCE_QUEUE, DS_LATENCY_ORIGIN_LOCAL,
+                                          used, capacity);
         }
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_PERIPHERAL)
         else if (msgq == &position_state_msgq) {
@@ -179,6 +185,8 @@ int __wrap_k_msgq_get(struct k_msgq *msgq, void *data, k_timeout_t timeout)
                                                  cycle_delta(now, start));
             }
             last_split_ready_cycles = now;
+            ds_latency_metrics_note_queue(DS_LAT_METRIC_SPLIT_TX_QUEUE, DS_LATENCY_ORIGIN_LOCAL,
+                                          used, capacity);
         }
 #endif
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
@@ -188,11 +196,15 @@ int __wrap_k_msgq_get(struct k_msgq *msgq, void *data, k_timeout_t timeout)
                                                  DS_LATENCY_ORIGIN_LOCAL,
                                                  cycle_delta(now, start));
             }
+            ds_latency_metrics_note_queue(DS_LAT_METRIC_SPLIT_RX_QUEUE, DS_LATENCY_ORIGIN_LOCAL,
+                                          used, capacity);
         }
 #endif
 #if IS_ENABLED(CONFIG_ZMK_BLE)
         else if (msgq == &zmk_hog_keyboard_msgq) {
             queue_pop(&ctx_hog, &start);
+            ds_latency_metrics_note_queue(DS_LAT_METRIC_HID_BLE_NOTIFY, DS_LATENCY_ORIGIN_LOCAL,
+                                          used, capacity);
         }
 #endif
     }
@@ -291,15 +303,24 @@ int __wrap_zmk_split_transport_central_peripheral_event_handler(
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
     if (ev.type == ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_SENSOR_EVENT &&
         ev.data.sensor_event.sensor_index == CONFIG_DONGLE_SCREEN_LATENCY_SENSOR_INDEX) {
-        int32_t raw_metric = ev.data.sensor_event.channel_data.value.val2;
-        uint32_t value = (uint32_t)MAX(ev.data.sensor_event.channel_data.value.val1, 0);
-        if (raw_metric < 0 || raw_metric >= DS_LAT_METRIC_COUNT) {
-            return 0;
-        }
-        enum ds_latency_metric metric = (enum ds_latency_metric)raw_metric;
+        uint32_t raw_metric = (uint32_t)ev.data.sensor_event.channel_data.value.val2;
         uint8_t origin = source + DS_LATENCY_ORIGIN_REMOTE_0;
-        if (metric < DS_LAT_METRIC_COUNT) {
-            ds_latency_metrics_process_remote(metric, origin, value);
+        if (raw_metric & DS_LATENCY_REMOTE_QUEUE_FLAG) {
+            enum ds_latency_metric metric =
+                (enum ds_latency_metric)(raw_metric & ~DS_LATENCY_REMOTE_QUEUE_FLAG);
+            if (metric < DS_LAT_METRIC_COUNT) {
+                uint32_t packed = (uint32_t)ev.data.sensor_event.channel_data.value.val1;
+                uint16_t depth = DS_LATENCY_REMOTE_QUEUE_DEPTH(packed);
+                uint16_t capacity = DS_LATENCY_REMOTE_QUEUE_CAPACITY(packed);
+                ds_latency_metrics_process_remote_queue(metric, origin, depth, capacity);
+            }
+        } else {
+            if (raw_metric < DS_LAT_METRIC_COUNT) {
+                uint32_t value =
+                    (uint32_t)MAX(ev.data.sensor_event.channel_data.value.val1, (int32_t)0);
+                ds_latency_metrics_process_remote((enum ds_latency_metric)raw_metric, origin,
+                                                 value);
+            }
         }
         return 0;
     }

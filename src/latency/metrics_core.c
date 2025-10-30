@@ -24,7 +24,6 @@ struct ds_latency_window {
 struct ds_latency_state {
     struct ds_latency_window windows[DS_LAT_METRIC_COUNT][DS_LATENCY_MAX_ORIGINS];
     struct ds_latency_queue_stat queues[DS_LAT_METRIC_COUNT][DS_LATENCY_MAX_ORIGINS];
-    struct ds_latency_cpu_stat cpu;
     struct k_spinlock lock;
 };
 
@@ -107,25 +106,16 @@ static int cmp_u32(const void *a, const void *b)
     return 0;
 }
 
-static uint32_t window_percentile(const struct ds_latency_window *win, uint8_t percentile)
+static uint32_t buffer_percentile(uint32_t *buffer, uint16_t count, uint8_t percentile)
 {
-    if (win->count == 0) {
-        return 0;
+    if (count == 0U) {
+        return 0U;
     }
 
-    uint16_t count = win->count;
-    uint32_t temp[DS_LATENCY_WINDOW_SIZE];
+    qsort(buffer, count, sizeof(uint32_t), cmp_u32);
 
-    uint16_t start = (win->next + DS_LATENCY_WINDOW_SIZE - count) % DS_LATENCY_WINDOW_SIZE;
-    for (uint16_t i = 0; i < count; i++) {
-        uint16_t idx = (start + i) % DS_LATENCY_WINDOW_SIZE;
-        temp[i] = win->samples[idx];
-    }
-
-    qsort(temp, count, sizeof(uint32_t), cmp_u32);
-
-    uint32_t rank = ((uint32_t)(count - 1) * percentile) / 100;
-    return temp[rank];
+    uint32_t rank = ((uint32_t)(count - 1U) * percentile) / 100U;
+    return buffer[rank];
 }
 
 uint32_t ds_latency_cycles_to_us(uint32_t cycles)
@@ -161,9 +151,16 @@ void ds_latency_metrics_record_us(enum ds_latency_metric metric, uint8_t origin,
 bool ds_latency_metrics_stat(enum ds_latency_metric metric, uint8_t origin,
                              struct ds_latency_stat *out)
 {
+    uint32_t samples[DS_LATENCY_WINDOW_SIZE];
+    uint16_t count;
+    uint32_t current;
+    uint32_t min_val;
+    uint32_t max_val;
+    uint64_t sum;
+
     struct k_spinlock_key key = k_spin_lock(&latency_state.lock);
     struct ds_latency_window *win = get_window(metric, origin);
-    if (win->count == 0) {
+    if (win->count == 0U) {
         memset(out, 0, sizeof(*out));
         k_spin_unlock(&latency_state.lock, key);
         return false;
@@ -173,16 +170,29 @@ bool ds_latency_metrics_stat(enum ds_latency_metric metric, uint8_t origin,
         recompute_min_max(win);
     }
 
-    uint32_t p95 = window_percentile(win, 95);
+    count = win->count;
+    current = win->current;
+    min_val = win->min;
+    max_val = win->max;
+    sum = win->sum;
 
-    out->current_us = win->current;
-    out->min_us = win->min;
-    out->max_us = win->max;
-    out->avg_us = (uint32_t)(win->sum / win->count);
-    out->p95_us = p95;
-    out->sample_count = win->count;
+    uint16_t start = (win->next + DS_LATENCY_WINDOW_SIZE - count) % DS_LATENCY_WINDOW_SIZE;
+    for (uint16_t i = 0U; i < count; i++) {
+        uint16_t idx = (start + i) % DS_LATENCY_WINDOW_SIZE;
+        samples[i] = win->samples[idx];
+    }
 
     k_spin_unlock(&latency_state.lock, key);
+
+    uint32_t p95 = buffer_percentile(samples, count, 95U);
+
+    out->current_us = current;
+    out->min_us = min_val;
+    out->max_us = max_val;
+    out->avg_us = (uint32_t)(sum / count);
+    out->p95_us = p95;
+    out->sample_count = count;
+
     return true;
 }
 
@@ -190,19 +200,34 @@ void ds_latency_metrics_note_queue(enum ds_latency_metric metric, uint8_t origin
                                    uint16_t depth, uint16_t capacity)
 {
     struct k_spinlock_key key = k_spin_lock(&latency_state.lock);
-    latency_state.queues[metric][origin].depth = depth;
-    if (latency_state.queues[metric][origin].max_depth < depth) {
-        latency_state.queues[metric][origin].max_depth = depth;
+    struct ds_latency_queue_stat *stat = &latency_state.queues[metric][origin];
+    stat->depth = depth;
+    if (stat->max_depth < depth) {
+        stat->max_depth = depth;
     }
-    (void)capacity;
+    stat->capacity = capacity;
+    stat->valid = true;
     k_spin_unlock(&latency_state.lock, key);
+}
+
+bool ds_latency_metrics_queue_stat(enum ds_latency_metric metric, uint8_t origin,
+                                   struct ds_latency_queue_stat *out)
+{
+    struct k_spinlock_key key = k_spin_lock(&latency_state.lock);
+    if (!latency_state.queues[metric][origin].valid) {
+        memset(out, 0, sizeof(*out));
+        k_spin_unlock(&latency_state.lock, key);
+        return false;
+    }
+
+    *out = latency_state.queues[metric][origin];
+    k_spin_unlock(&latency_state.lock, key);
+    return true;
 }
 
 void ds_latency_metrics_set_cpu_idle(uint8_t idle_pct)
 {
-    struct k_spinlock_key key = k_spin_lock(&latency_state.lock);
-    latency_state.cpu.idle_pct = idle_pct;
-    k_spin_unlock(&latency_state.lock, key);
+    ds_latency_metrics_record_us(DS_LAT_METRIC_CPU_IDLE, DS_LATENCY_ORIGIN_LOCAL, idle_pct);
 }
 
 static void append_line(struct ds_latency_display_snapshot *snap, const char *fmt, ...)
@@ -253,24 +278,51 @@ struct ds_latency_display_snapshot ds_latency_metrics_snapshot(void)
         append_line(&snap, "USB tx cur:%u avg:%u", stat.current_us, stat.avg_us);
     }
 
-    struct k_spinlock_key key = k_spin_lock(&latency_state.lock);
-    uint8_t idle = latency_state.cpu.idle_pct;
-    k_spin_unlock(&latency_state.lock, key);
-    if (idle > 0) {
-        append_line(&snap, "CPU idle %u%%", idle);
+    struct ds_latency_queue_stat local_queue;
+    if (ds_latency_metrics_queue_stat(DS_LAT_METRIC_DEBOUNCE_QUEUE, DS_LATENCY_ORIGIN_LOCAL,
+                                      &local_queue)) {
+        append_line(&snap, "Scan q %u/%u (max %u)", local_queue.depth, local_queue.capacity,
+                    local_queue.max_depth);
+    }
+    if (ds_latency_metrics_queue_stat(DS_LAT_METRIC_SPLIT_TX_QUEUE, DS_LATENCY_ORIGIN_LOCAL,
+                                      &local_queue)) {
+        append_line(&snap, "Split TX q %u/%u (max %u)", local_queue.depth, local_queue.capacity,
+                    local_queue.max_depth);
+    }
+    if (ds_latency_metrics_queue_stat(DS_LAT_METRIC_SPLIT_RX_QUEUE, DS_LATENCY_ORIGIN_LOCAL,
+                                      &local_queue)) {
+        append_line(&snap, "Split RX q %u/%u (max %u)", local_queue.depth, local_queue.capacity,
+                    local_queue.max_depth);
+    }
+
+    if (ds_latency_metrics_stat(DS_LAT_METRIC_CPU_IDLE, DS_LATENCY_ORIGIN_LOCAL, &stat)) {
+        append_line(&snap, "CPU idle cur:%u avg:%u", stat.current_us, stat.avg_us);
     }
 
     for (uint8_t origin = DS_LATENCY_ORIGIN_REMOTE_0; origin < DS_LATENCY_MAX_ORIGINS; origin++) {
         if (ds_latency_metrics_stat(DS_LAT_METRIC_DEBOUNCE_QUEUE, origin, &stat)) {
-        append_line(&snap, "Scan P%u cur:%u avg:%u", origin - 1, stat.current_us, stat.avg_us);
+            append_line(&snap, "Scan P%u cur:%u avg:%u", origin - 1, stat.current_us, stat.avg_us);
+        }
+        if (ds_latency_metrics_stat(DS_LAT_METRIC_SPLIT_TX_QUEUE, origin, &stat)) {
+            append_line(&snap, "P%u TX q cur:%u avg:%u", origin - 1, stat.current_us, stat.avg_us);
+        }
+        if (ds_latency_metrics_stat(DS_LAT_METRIC_SPLIT_TX_NOTIFY, origin, &stat)) {
+            append_line(&snap, "P%u air cur:%u avg:%u", origin - 1, stat.current_us, stat.avg_us);
+        }
+        if (ds_latency_metrics_stat(DS_LAT_METRIC_CPU_IDLE, origin, &stat)) {
+            append_line(&snap, "P%u CPU cur:%u avg:%u", origin - 1, stat.current_us, stat.avg_us);
+        }
+
+        struct ds_latency_queue_stat remote_queue;
+        if (ds_latency_metrics_queue_stat(DS_LAT_METRIC_DEBOUNCE_QUEUE, origin, &remote_queue)) {
+            append_line(&snap, "P%u scan q %u/%u (max %u)", origin - 1, remote_queue.depth,
+                        remote_queue.capacity, remote_queue.max_depth);
+        }
+        if (ds_latency_metrics_queue_stat(DS_LAT_METRIC_SPLIT_TX_QUEUE, origin, &remote_queue)) {
+            append_line(&snap, "P%u tx q %u/%u (max %u)", origin - 1, remote_queue.depth,
+                        remote_queue.capacity, remote_queue.max_depth);
+        }
     }
-    if (ds_latency_metrics_stat(DS_LAT_METRIC_SPLIT_TX_QUEUE, origin, &stat)) {
-        append_line(&snap, "P%u TX q cur:%u avg:%u", origin - 1, stat.current_us, stat.avg_us);
-    }
-    if (ds_latency_metrics_stat(DS_LAT_METRIC_SPLIT_TX_NOTIFY, origin, &stat)) {
-        append_line(&snap, "P%u air cur:%u avg:%u", origin - 1, stat.current_us, stat.avg_us);
-    }
-}
 
     return snap;
 }
@@ -282,6 +334,24 @@ void ds_latency_metrics_process_remote(enum ds_latency_metric metric, uint8_t or
         return;
     }
     ds_latency_metrics_record_us(metric, origin, value_us);
+}
+
+void ds_latency_metrics_process_remote_queue(enum ds_latency_metric metric, uint8_t origin,
+                                             uint16_t depth, uint16_t capacity)
+{
+    if (origin >= DS_LATENCY_MAX_ORIGINS) {
+        return;
+    }
+
+    struct k_spinlock_key key = k_spin_lock(&latency_state.lock);
+    struct ds_latency_queue_stat *stat = &latency_state.queues[metric][origin];
+    stat->depth = depth;
+    if (stat->max_depth < depth) {
+        stat->max_depth = depth;
+    }
+    stat->capacity = capacity;
+    stat->valid = true;
+    k_spin_unlock(&latency_state.lock, key);
 }
 
 void ds_latency_metrics_tick(void)

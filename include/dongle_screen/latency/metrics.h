@@ -1,6 +1,7 @@
 #ifndef DONGLE_SCREEN_LATENCY_METRICS_H_
 #define DONGLE_SCREEN_LATENCY_METRICS_H_
 
+#include <stdbool.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 
@@ -10,6 +11,12 @@ extern "C" {
 
 #define DS_LATENCY_WINDOW_SIZE CONFIG_DONGLE_SCREEN_LATENCY_WINDOW
 #define DS_LATENCY_MAX_ORIGINS 4
+
+#define DS_LATENCY_REMOTE_QUEUE_FLAG 0x80000000U
+#define DS_LATENCY_REMOTE_QUEUE_PACK(depth, capacity)                                              \
+    ((((uint32_t)(capacity) & 0xFFFFU) << 16) | ((uint32_t)(depth) & 0xFFFFU))
+#define DS_LATENCY_REMOTE_QUEUE_DEPTH(value) ((uint16_t)((value) & 0xFFFFU))
+#define DS_LATENCY_REMOTE_QUEUE_CAPACITY(value) ((uint16_t)(((value) >> 16) & 0xFFFFU))
 
 enum ds_latency_origin {
     DS_LATENCY_ORIGIN_LOCAL = 0,
@@ -26,6 +33,7 @@ enum ds_latency_metric {
     DS_LAT_METRIC_HID_BLE_NOTIFY,
     DS_LAT_METRIC_USB_FRAME_WAIT,
     DS_LAT_METRIC_USB_TX,
+    DS_LAT_METRIC_CPU_IDLE,
     DS_LAT_METRIC_COUNT,
 };
 
@@ -41,10 +49,8 @@ struct ds_latency_stat {
 struct ds_latency_queue_stat {
     uint16_t depth;
     uint16_t max_depth;
-};
-
-struct ds_latency_cpu_stat {
-    uint8_t idle_pct;
+    uint16_t capacity;
+    bool valid;
 };
 
 struct ds_latency_display_line {
@@ -69,6 +75,9 @@ bool ds_latency_metrics_stat(enum ds_latency_metric metric, uint8_t origin,
 void ds_latency_metrics_note_queue(enum ds_latency_metric metric, uint8_t origin,
                                    uint16_t depth, uint16_t capacity);
 
+bool ds_latency_metrics_queue_stat(enum ds_latency_metric metric, uint8_t origin,
+                                   struct ds_latency_queue_stat *out);
+
 void ds_latency_metrics_set_cpu_idle(uint8_t idle_pct);
 
 uint32_t ds_latency_cycles_to_us(uint32_t cycles);
@@ -77,6 +86,9 @@ struct ds_latency_display_snapshot ds_latency_metrics_snapshot(void);
 
 void ds_latency_metrics_process_remote(enum ds_latency_metric metric, uint8_t origin,
                                        uint32_t value_us);
+
+void ds_latency_metrics_process_remote_queue(enum ds_latency_metric metric, uint8_t origin,
+                                             uint16_t depth, uint16_t capacity);
 
 void ds_latency_metrics_tick(void);
 
